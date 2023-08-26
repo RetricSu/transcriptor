@@ -1,75 +1,32 @@
-#![allow(clippy::uninlined_format_args)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+use eframe::egui;
+use env_logger;
 
-use hound::{SampleFormat, WavReader};
-use std::path::Path;
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext};
+fn main() -> Result<(), eframe::Error> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-fn parse_wav_file(path: &Path) -> Vec<i16> {
-    let reader = WavReader::open(path).expect("failed to read file");
+    let options = eframe::NativeOptions {
+        initial_window_size: Some(egui::vec2(320.0, 240.0)),
+        ..Default::default()
+    };
 
-    if reader.spec().channels != 1 {
-        panic!("expected mono audio file");
-    }
-    if reader.spec().sample_format != SampleFormat::Int {
-        panic!("expected integer sample format");
-    }
-    if reader.spec().sample_rate != 16000 {
-        panic!("expected 16KHz sample rate");
-    }
-    if reader.spec().bits_per_sample != 16 {
-        panic!("expected 16 bits per sample");
-    }
+    // Our application state:
+    let mut name = "Arthur".to_owned();
+    let mut age = 42;
 
-    reader
-        .into_samples::<i16>()
-        .map(|x| x.expect("sample"))
-        .collect::<Vec<_>>()
-}
-
-fn main() {
-    let arg1 = std::env::args()
-        .nth(1)
-        .expect("first argument should be path to WAV file");
-    let audio_path = Path::new(&arg1);
-    if !audio_path.exists() {
-        panic!("audio file doesn't exist");
-    }
-    let arg2 = std::env::args()
-        .nth(2)
-        .expect("second argument should be path to Whisper model");
-    let whisper_path = Path::new(&arg2);
-    if !whisper_path.exists() {
-        panic!("whisper file doesn't exist")
-    }
-
-    let original_samples = parse_wav_file(audio_path);
-    let samples = whisper_rs::convert_integer_to_float_audio(&original_samples);
-
-    let ctx = WhisperContext::new(&whisper_path.to_string_lossy()).expect("failed to open model");
-    let mut state = ctx.create_state().expect("failed to create key");
-    let mut params = FullParams::new(SamplingStrategy::default());
-    //params.set_progress_callback(|progress| println!("Progress callback: {}%", progress));
-
-    let st = std::time::Instant::now();
-    state
-        .full(params, &samples)
-        .expect("failed to convert samples");
-    let et = std::time::Instant::now();
-
-    let num_segments = state
-        .full_n_segments()
-        .expect("failed to get number of segments");
-    for i in 0..num_segments {
-        let segment = state
-            .full_get_segment_text(i)
-            .expect("failed to get segment");
-        let start_timestamp = state
-            .full_get_segment_t0(i)
-            .expect("failed to get start timestamp");
-        let end_timestamp = state
-            .full_get_segment_t1(i)
-            .expect("failed to get end timestamp");
-        println!("[{} - {}]: {}", start_timestamp, end_timestamp, segment);
-    }
-    println!("took {}ms", (et - st).as_millis());
+    eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("My egui Application");
+            ui.horizontal(|ui| {
+                let name_label = ui.label("Your name: ");
+                ui.text_edit_singleline(&mut name)
+                    .labelled_by(name_label.id);
+            });
+            ui.add(egui::Slider::new(&mut age, 0..=120).text("age"));
+            if ui.button("Click each year").clicked() {
+                age += 1;
+            }
+            ui.label(format!("Hello '{name}', age {age}"));
+        });
+    })
 }
